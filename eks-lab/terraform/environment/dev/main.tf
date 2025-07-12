@@ -1,29 +1,37 @@
-module "eks" {
-  source  = "terraform-aws-modules/eks/aws"
-  version = "20.8.2"
-
-  cluster_name    = var.cluster_name
-  cluster_version = "1.30"
-  vpc_id          = var.vpc_id
-  subnet_ids      = var.private_subnet_ids
-
-  enable_irsa = true
-
-  eks_managed_node_groups = {
-    on_demand = {
-      instance_types = ["t3.medium"]
-      min_size       = 1
-      max_size       = 3
-      desired_size   = 2
-    }
-    spot = {
-      instance_types = ["t3.medium", "t3a.medium"]
-      capacity_type  = "SPOT"
-      min_size       = 0
-      max_size       = 3
-      desired_size   = 1
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.40" # ✅ safe version that supports EKS module
     }
   }
+}
 
-  tags = var.tags
+
+provider "aws" {
+  region = "us-east-1"
+}
+
+module "vpc" {
+  source = "../../modules/vpc"
+  vpc_name = "eks-lab-vpc"
+  region   = "us-east-1"
+  vpc_cidr = "10.0.0.0/16"
+  private_subnets = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+  public_subnets  = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
+  tags = {
+    Project = "eks-lab"
+    Env     = "dev"
+  }
+}
+
+module "eks" {
+  source = "../../modules/eks"
+  cluster_name        = "eks-lab"
+  vpc_id              = module.vpc.vpc_id
+  private_subnet_ids  = module.vpc.private_subnets
+  tags = {
+    Project = "eks-lab"
+    Env     = "dev"
+  }
 }
