@@ -10,3 +10,8 @@
 
 # Sensitive local output (optional)
 *.pem
+
+
+
+
+ec2.txt # AWS EC2 instance files
