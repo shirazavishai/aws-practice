@@ -1,5 +1,7 @@
 # 🧪 DevOps Practice Assignment: Scalable MongoDB Deployment on AWS ECS Fargate
 
+* ECS - Elastic Container Service
+
 ## 📝 Objective
 Design and deploy a highly available, containerized MongoDB cluster on AWS using ECS Fargate. The system should run two MongoDB instances, designed for resilience and scalability, using modern AWS-native and infrastructure-as-code practices.
 
