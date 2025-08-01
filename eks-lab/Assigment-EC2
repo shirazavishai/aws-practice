@@ -1,0 +1,114 @@
+ ### DevOps Assignment: Deploy MongoDB on AWS EC2 with Terraform
+📌 Purpose
+The purpose of this assignment is to simulate a real-world infrastructure deployment scenario in AWS using Terraform. You will:
+
+* Use infrastructure-as-code (IaC) to provision AWS resources.
+
+* Deploy two MongoDB instances on EC2 within a custom VPC.
+
+* Practice secure networking and provisioning.
+
+* Build a cost-efficient, free-tier–friendly environment.
+
+* This exercise is designed for hands-on AWS experience, avoiding managed services like EKS to reduce costs.
+
+🎯 Objectives
+By the end of this task, you will:
+
+✅ Understand how to define infrastructure using Terraform modules
+✅ Deploy a custom VPC with subnets, internet gateway, and routing
+✅ Launch two EC2 instances with MongoDB installed via user_data
+✅ Configure secure networking with Security Groups
+✅ Enable the two MongoDB instances to communicate with each other
+✅ Optionally, connect to MongoDB remotely or expose it securely
+
+🧩 Requirements
+✅ Infrastructure
+* AWS Region: us-east-1 (Free Tier friendly)
+
+* VPC with:
+
+   * 1 public subnet in us-east-1a
+
+   * Internet Gateway + route table
+
+* 2 EC2 instances (t2.micro or t3.micro)
+
+* Ubuntu 22.04 AMI
+
+* MongoDB installed via user_data script
+
+* Tags identifying each instance (e.g., mongo-1, mongo-2)
+
+* Key pair or AWS SSM access
+
+✅ Networking & Security
+* Security group(s) allowing:
+
+   * Port 22 (SSH) only from your IP
+
+   * Port 27017 between the two MongoDB instances
+
+* Outbound internet access for installing MongoDB packages
+
+✅ Terraform Structure
+* Use a modular approach:
+
+   * vpc/ module
+
+   * ec2-mongo/ module
+
+   * security/ module
+
+   * A root module under environments/dev/main.tf to orchestrate it
+
+✅ Validation
+* SSH into each EC2 instance
+
+* Confirm MongoDB is running:
+
+   * bash
+   * Copy
+   * Edit
+   * ps aux | grep mongod
+
+* From one instance, connect to the other via:
+
+   * bash
+   * Copy
+   * Edit
+   * mongo --host <other-private-ip>
+   * Ensure connection is successful (no firewall or security group issues)
+
+💰 Constraints
+You must use free-tier–eligible instance types (t2.micro or t3.micro)
+
+* No NAT Gateway, no Load Balancer
+
+* Do not use EKS or managed MongoDB services
+
+* Clean up all resources using terraform destroy after testing
+
+### 🧠 Bonus Challenges (Optional)
+📦 Create a backup of MongoDB data and upload it to S3
+
+📊 Enable CloudWatch Logs for MongoDB logs
+
+🔐 Use AWS SSM (no SSH key) to access EC2
+
+🛡️ Set up MongoDB replica set across both nodes
+
+### Deliverables
+terraform/ folder with:
+
+* Modular, reusable code
+
+* Clearly named and structured files
+
+A brief README with:
+
+* Steps to apply and destroy
+
+* How to test MongoDB connection
+
+* (Optional) Screenshots of MongoDB running

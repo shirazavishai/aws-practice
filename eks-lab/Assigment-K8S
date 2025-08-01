@@ -1,0 +1,195 @@
+Below is a **hands‑on “mini‑production” lab** you can run in your fresh AWS account.  It’s purposely scoped so you can finish it over a weekend, yet it touches almost every topic that tends to come up in classic DevOps/Kubernetes interviews.
+
+---
+
+## 0 · Ground rules
+
+| Goal                                                       | Why it matters in interviews                                         |
+| ---------------------------------------------------------- | -------------------------------------------------------------------- |
+| **Everything IaC** (Terraform & Helm)                      | Shows discipline and repeatability.                                  |
+| **Keep costs visible** (AWS Budgets + cost‐anomaly alerts) | Demonstrates ownership and FinOps awareness.                         |
+| **Document every decision** in a short `README.md`         | Interviewers love to see *why* you chose something, not just *what*. |
+
+---
+
+## 1 · Bootstrap AWS
+
+1. **Create an IAM admin user** just for this lab; enable MFA.
+2. Install & configure **AWS CLI** (`aws configure sso` is current best practice).
+3. Set a **Budget** (e.g., USD 50) and a **Cost Anomaly Detection** alert so you don’t get surprises.
+4. Decide on one region (eu‑central‑1 or us‑east‑1 are popular) and stick to it.
+
+> **Interview angle:** Be ready to explain least‑privilege IAM vs. speed of prototyping, and why MFA is mandatory.
+
+---
+
+## 2 · Terraform: VPC + EKS
+
+1. **Scaffold Terraform project**
+
+   ```
+   .
+   ├── main.tf          # providers + backend (S3 + DynamoDB lock)
+   ├── networking/
+   │   └── vpc.tf
+   ├── eks/
+   │   └── cluster.tf   # aws_eks_cluster + eks_managed_node_group
+   └── outputs.tf
+   ```
+2. **Networking**
+
+   * 3 public + 3 private subnets across three AZs.
+      
+      Why do DevOps engineers use both?
+
+      Public subnets: for services that need to be accessible from the internet (e.g. ALB).
+      
+      Private subnets: for everything else, especially your EKS nodes and MongoDB pods (safer!).
+      
+      💡 So:
+      
+      3 AZs → high availability
+
+      3 private subnets → EKS worker nodes + MongoDB (private, secure)
+
+      3 public subnets → Load Balancer or bastion host
+   * NAT Gateways per AZ (explain cost trade‑off).
+3. **EKS**
+
+   * Managed control plane, version 1.30 (latest LTS at July 2025).
+   * One **managed node group** (t3.medium) + one **spot node group** (t3.medium, `capacity_type = "SPOT"` ).
+   * Spot = AWS gives you a discount (up to 90%) for spare capacity
+   * Install addons in Terraform:
+
+     * `aws-eks-vpc-cni`, `kube-proxy`, `amazon-eks-pod-identity-agent`.
+4. **IAM Roles for Service Accounts (IRSA)**
+
+   * Create an IAM role and annotate the `kube-system/aws-load-balancer-controller` service account.
+
+> **Interview angles:** VPC design, node‑to‑control‑plane comms, IRSA vs. node IAM roles, spot interruption handling.
+
+---
+
+## 3 · Cluster addons (Helm)
+
+| Add‑on                           | Helm chart                                                                  | Why                              |
+| -------------------------------- | --------------------------------------------------------------------------- | -------------------------------- |
+| **AWS Load Balancer Controller** | `eks/aws-load-balancer-controller`                                          | Ingress via ALB.                 |
+| **Cluster Autoscaler**           | `kubernetes/autoscaler` (values = `awsRegion`, `autoDiscovery.clusterName`) | Demonstrates HPA ↔ CA interplay. |
+| **kube‑prometheus‑stack**        | `prometheus-community/kube-prometheus-stack`                                | Full monitoring stack.           |
+| **EBS CSI Driver**               | `aws-ebs-csi-driver`                                                        | Dynamic PVs for MongoDB.         |
+
+All Helm values should go in version‑controlled YAML files (e.g., `helm-values/ebs-csi.yaml`).
+
+---
+
+## 4 · Deploy MongoDB ReplicaSet (2 × mongod + 1 × arbiter)
+
+1. Use **Bitnami/MongoDB** Helm chart (`bitnami/mongodb`) with these key values:
+
+   ```yaml
+   architecture: replicaset
+   replicaCount: 3          # 2 data nodes + 1 arbiter
+   persistence:
+     storageClass: gp3
+     size: 10Gi
+   auth:
+     enabled: true
+     existingSecret: mongo-secret
+   resources:
+     requests:
+       cpu: 250m
+       memory: 256Mi
+     limits:
+       cpu: 500m
+       memory: 512Mi
+   ```
+
+2. **Secrets**
+
+   * Create a Kubernetes secret with `mongo-root-user` and `mongo-root-password`, sealed with `kubeseal` so you can commit the SealedSecret YAML safely.
+
+3. **NetworkPolicy**
+
+   * Allow traffic only from a namespace called `backend` (future app) and your bastion pod.
+
+4. **Backup & restore**
+
+   * Install **Velero** with the S3 backend (`--bucket eks-backups`).
+   * Take an on‑demand backup and document the restore command.
+
+> **Interview angles:** StatefulSets vs. Deployments, EBS vs. EFS, replica‑set health, sealed secrets vs. SSM/Secrets Manager, backup consistency.
+
+---
+
+## 5 · CI/CD pipeline (Jenkins or GitHub Actions)
+
+1. **Build** a dummy Go or .NET microservice that reads/writes to MongoDB.
+2. **Dockerfile** → push image to **ECR** (scan on push).
+3. **Pipeline steps**
+
+   * Lint, unit test.
+   * Build & push image.
+   * `helm upgrade --install` using a versioned values file.
+   * Run `kubectl rollout status` and a post‑deploy smoke test (curl health endpoint).
+
+> **Interview angles:** GitOps vs. pipeline “push” model, Helm release strategies, Blue‑Green vs. Canary, ECR scan findings.
+
+---
+
+## 6 · Observability
+
+| Aspect              | Tool                                 | Task                                                         |
+| ------------------- | ------------------------------------ | ------------------------------------------------------------ |
+| **Metrics**         | Prometheus/Grafana                   | Dashboards: node, pod, MongoDB replSet.                      |
+| **Logs**            | CloudWatch Logs Insights             | Create a log group via Fluent Bit; write a sample KQL query. |
+| **Tracing** (bonus) | AWS Distro for OpenTelemetry + X‑Ray | Instrument the app.                                          |
+
+> **Interview angle:** Explain ‑ when would you choose managed Amazon Managed Service for Prometheus over self‑hosted?
+
+---
+
+## 7 · Security & hardening checklist
+
+* **IAM:** use separate roles for nodes vs. SA; enforce least privilege with IAM Access Analyzer.
+* **Kubernetes:** enable **Pod Security Standards** (restricted) & **OPA/Gatekeeper**.
+* **Network:** Calico or Cilium for network policies.
+* **Secrets:** compare Kubernetes secrets (base64), SealedSecrets, AWS Secrets Manager, and KMS envelope encryption.
+* **Cluster Upgrades:** plan for version skew (n‑1 rule) and test on a dev cluster first.
+
+Prepare short talking points for each item.
+
+---
+
+## 8 · Cost & cleanup
+
+1. Use `kubecost` or AWS **Cost Explorer** to tag and monitor the lab.
+2. When done, **terraform destroy** and verify that all EBS volumes, Load Balancers, and Route53 records are gone.
+
+---
+
+## 9 · Self‑assessment & interview prep
+
+| Evidence to bring                                           | Why it impresses                          |
+| ----------------------------------------------------------- | ----------------------------------------- |
+| `terraform plan` & `terraform graph` screenshots            | Shows infrastructure visualization.       |
+| A one‑page **architecture diagram** (draw\.io / Excalidraw) | Communicates clearly under time pressure. |
+| `README.md` with decisions & trade‑offs                     | Displays critical thinking.               |
+| `kubectl get pods -o wide` and `helm list` outputs          | Proves hands‑on execution.                |
+
+Finally, practice explaining:
+
+* How EKS control plane works (API Server, etcd, control plane addons).
+* Difference between **Cluster Autoscaler** and **Karpenter** (new hot topic).
+* MongoDB HA vs. Amazon DocumentDB pros/cons.
+* How you would migrate this stack from Azure AKS to AWS EKS.
+
+---
+
+### Next steps
+
+1. Block out \~8 hours; do sections 1‑4 on day 1 and 5‑7 on day 2.
+2. Keep a running log (`journal.md`) of every hurdle—these anecdotes make great interview stories.
+3. When you’re comfortable, spin up the same exercise with **Terraform Cloud** as the backend and bring remote state locking into the conversation.
+
+Good luck—once you can build, secure, monitor, and tear down this mini‑prod cluster, you’ll tick nearly every “classic DevOps interview” box for AWS & Kubernetes roles! 🎯
